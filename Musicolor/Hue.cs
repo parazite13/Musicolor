@@ -80,6 +80,11 @@ namespace Musicolor
             Console.WriteLine("Stop !");
         }
 
+        public static void Dispose()
+        {
+            Client.Close();
+        }
+
         [Serializable]
         private struct HueCredential
         {
