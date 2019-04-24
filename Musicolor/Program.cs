@@ -50,9 +50,9 @@ namespace Musicolor
                 return;
             }
                 
-            Hue.Register(bridgeIp);
+            Hue.Setup(bridgeIp);
             
-            while(!Hue.Setup)
+            while(!Hue.Ready)
             {
                 Thread.Sleep(1000);
             }           
@@ -67,7 +67,7 @@ namespace Musicolor
 
             videoCapture = new VideoCapture();
             var videoCaptureTimer = new Timer(FrameUpdateCallback, new object(), 0, 1000 / videoUpdateRate);
-
+            
             Console.Clear();
 
             try
@@ -87,8 +87,8 @@ namespace Musicolor
             finally
             {
                 videoCaptureTimer.Dispose();
-                recorder.Stop();
                 Hue.Dispose();
+                recorder.Stop();
             }
             
         }
@@ -114,34 +114,13 @@ namespace Musicolor
 
         private static void Recorder_OnSampleAvailable(float[] sample)
         {
-            if(verbose)
-            {
-                Console.SetCursorPosition(0, 0);
-                Console.Write("################################");
-            }
-            
             if (lastSoundSec != DateTime.Now.Second)
-            {
-                if(verbose)
-                {
-                    Console.SetCursorPosition(0, 1);
-                    Console.Write("Requests per second: " + requestPerSecond);
-                }
-
+            {    
                 lastKnownRequestPerSecond = requestPerSecond;
                 requestPerSecond = 0;
                 lastSoundSec = DateTime.Now.Second;
             }
-            else
-            {
-                if(verbose)
-                {
-                    Console.SetCursorPosition(0, 1);
-                    Console.Write("Requests per second: " + lastKnownRequestPerSecond);
-                }
-            }
 
-           
             var rms = RMS(sample);
             var level = (float)Math.Pow(rms * 30, 1 / 2f);
             var bright = Math.Max(1f / 255, level);
@@ -149,19 +128,21 @@ namespace Musicolor
             previousBrights.Add(bright);
             if (previousBrights.Count < nbBrighsForAverage) return;
 
-            if(verbose)
-            {
-                Console.SetCursorPosition(0, 2);
-                Console.Write("Video updates per second: " + lastKnownVideoUpdatePerSecond);
-            }
-
             previousBrights.RemoveAt(0);
             bright = previousBrights.Average();
 
-            Hue.BaseLayer.SetState(new CancellationToken(), color, bright, default(TimeSpan), true);
+            Hue.BaseLayer.SetState(new CancellationToken(), color, bright);
+
+            requestPerSecond++;
 
             if(verbose)
             {
+                Console.SetCursorPosition(0, 0);
+                Console.Write("################################");
+                Console.SetCursorPosition(0, 1);
+                Console.Write("Requests per second: " + lastKnownRequestPerSecond);
+                Console.SetCursorPosition(0, 2);
+                Console.Write("Video updates per second: " + lastKnownVideoUpdatePerSecond);
                 Console.SetCursorPosition(0, 3);
                 Console.Write("Bright : " + bright);
                 Console.SetCursorPosition(0, 4);
@@ -170,7 +151,6 @@ namespace Musicolor
                 Console.WriteLine("################################");
             }
 
-            requestPerSecond++;
         }
 
         private static float RMS(float[] x)

@@ -11,7 +11,7 @@ namespace Musicolor
         private Audio audio;
         private int NUM_CHANNELS = 1;
         public static int SAMPLE_RATE = 44100;
-        private uint FRAMES_PER_BUFFER = PortAudio.paFramesPerBufferUnspecified;
+        private uint FRAMES_PER_BUFFER = 2048;
 
         public Recorder()
         {

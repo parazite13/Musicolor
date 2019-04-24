@@ -5,6 +5,7 @@ using Q42.HueApi.Streaming.Models;
 using System.Linq;
 using Q42.HueApi.Models.Bridge;
 using System.IO;
+using System.Threading;
 
 namespace Musicolor
 {
@@ -12,13 +13,15 @@ namespace Musicolor
     {
         public static StreamingHueClient Client;
         public static StreamingGroup StreamingGroup;
-        public static bool Setup = false;
+        public static bool Ready = false;
         public static EntertainmentLayer BaseLayer;
 
         private const string credentialPath = "hue_credentials.json";
         private static HueCredential hueCredential;
 
-        public static async void Register(string ip)
+        private static CancellationTokenSource cancellationTokenSource;
+
+        public static async void Setup(string ip)
         {
             RegisterEntertainmentResult registeredInfos;
 
@@ -48,40 +51,36 @@ namespace Musicolor
                 StreamingClientKey = hueCredential.Key
             };
             
+            Console.WriteLine("Get client");
             Client = new StreamingHueClient(ip, registeredInfos.Username, registeredInfos.StreamingClientKey);
 
-            Console.WriteLine("Get client");
-
             //Get the entertainment group
+            Console.WriteLine("Get entertainment group");
             var all = await Client.LocalHueClient.GetEntertainmentGroups();
             var group = all.FirstOrDefault();
 
-            Console.WriteLine("Get entertainment group");
-
             //Create a streaming group
+            Console.WriteLine("Get streaming group");
             StreamingGroup = new StreamingGroup(group.Locations);
 
-            Console.WriteLine("Get streaming group");
-
             //Connect to the streaming group
+            Console.WriteLine("Connect to group");
             await Client.Connect(group.Id);
 
-            Console.WriteLine("Connect to group");
-
-            BaseLayer = StreamingGroup.GetNewLayer(true);
-
-            Setup = true;
-
             Console.WriteLine("Done !");
+            BaseLayer = StreamingGroup.GetNewLayer(true);
+            Ready = true;
+
+            cancellationTokenSource = new CancellationTokenSource();
 
             //Start auto updating this entertainment group
-            await Client.AutoUpdate(StreamingGroup, new System.Threading.CancellationToken(), 50);
+            await Client.AutoUpdate(StreamingGroup, cancellationTokenSource.Token, 50);
             
-            Console.WriteLine("Stop !");
         }
 
         public static void Dispose()
         {
+            cancellationTokenSource.Cancel();
             Client.Close();
         }
 
