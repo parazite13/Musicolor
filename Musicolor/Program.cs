@@ -7,6 +7,7 @@ using Emgu.CV;
 using Emgu.CV.Structure;
 using Q42.HueApi.ColorConverters;
 using NDesk.Options;
+using System.Threading.Tasks;
 
 namespace Musicolor
 {
@@ -21,6 +22,7 @@ namespace Musicolor
         private static int lastKnownRequestPerSecond;
         private static int lastSoundSec = DateTime.Now.Second;
         private static int lastVideoSec = DateTime.Now.Second;
+        private static int restartCount;
 
         private static List<float> previousBrights;
 
@@ -29,18 +31,25 @@ namespace Musicolor
         private static VideoCapture videoCapture;
 
         private static bool verbose;
+        private static bool autoRestart;
         private static int nbBrighsForAverage;
 
         static void Main(string[] args)
         {
             var showUsage = false;
-            var videoUpdateRate = 1;
+            var videoUpdateRate = 1f;
+            var samplerate = Recorder.DEFAULT_SAMPLE_RATE;
+            var buffer = Recorder.DEFAULT_FRAMES_PER_BUFFER;
+            autoRestart = false;
             nbBrighsForAverage = 5;
             var p = new OptionSet()
-                .Add("r|rate=", "Maximun rate at which the video input will be grabbed to deduce which color is appropriate per second (default : 1)", v => videoUpdateRate = int.Parse(v))
-                .Add("b|bright=", "Specify how many previous sample will be used to compute the average bright (default : 5)", v => nbBrighsForAverage = int.Parse(v))
+                .Add("ar|auto_restart", "If present the recorder will automatically restart if an underrun occurs", v => autoRestart = v != null)
+                .Add("s|samplerate=", "Samplerate that will be used for the recording (default : " + Recorder.DEFAULT_SAMPLE_RATE + ")", v => samplerate = int.Parse(v))
+                .Add("b|buffer=", "Buffer size that will be used for the recording (default : " + Recorder.DEFAULT_FRAMES_PER_BUFFER + ")", v => buffer = uint.Parse(v))
+                .Add("r|rate=", "Maximun rate at which the video input will be grabbed to deduce which color is appropriate per second (default : 1)", v => videoUpdateRate = float.Parse(v))
+                .Add("ab|average_bright=", "Specify how many previous sample will be used to compute the average bright (default : 5)", v => nbBrighsForAverage = int.Parse(v))
                 .Add("v|verbose", v => verbose = v != null)
-                .Add("h|help", v => showUsage = true);
+                .Add("h|help", v => showUsage = v != null);
             p.Parse(args);
 
             if (showUsage)
@@ -58,27 +67,49 @@ namespace Musicolor
             }           
 
             color = new RGBColor(1, 1, 1);
-
+            restartCount = 0;
             previousBrights = new List<float>();
 
-            var recorder = new Recorder();
+            var recorder = new Recorder(samplerate, buffer);
             recorder.OnSampleAvailable += Recorder_OnSampleAvailable; 
             recorder.Start();
-
-            videoCapture = new VideoCapture();
-            var videoCaptureTimer = new Timer(FrameUpdateCallback, new object(), 0, 1000 / videoUpdateRate);
             
+            videoCapture = new VideoCapture();
+            var videoCaptureTimer = new Timer(FrameUpdateCallback, new object(), 0, (int)(1000f / videoUpdateRate));
+
             Console.Clear();
 
             try
             {
-                ConsoleKeyInfo cki;
-                do
+                var exitRequested = false;
+                Task.Factory.StartNew(() =>
+                {
+                    while (Console.ReadKey().Key != ConsoleKey.Escape) ;
+                    exitRequested = true;
+                });
+
+                while(!exitRequested)
                 {
                     Thread.Sleep(100);
-                    cki = Console.ReadKey();
+
+                    if(!recorder.IsRecording)
+                    {
+                        if(autoRestart)
+                        {
+                            Console.WriteLine("Restart recording !");
+                            Thread.Sleep(1000);
+                            recorder = new Recorder();
+                            recorder.OnSampleAvailable += Recorder_OnSampleAvailable;
+                            recorder.Start();
+                            Console.Clear();
+                            restartCount++;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
-                while (cki.Key != ConsoleKey.Escape);   
             }
             catch (Exception e)
             {
@@ -95,25 +126,19 @@ namespace Musicolor
 
         private static void FrameUpdateCallback(object state)
         {
-            if(lastVideoSec != DateTime.Now.Second)
+            color = DominantColor(videoCapture.QueryFrame().ToImage<Bgr, byte>());
+            videoUpdatePerSecond++;
+        }  
+
+        private static void Recorder_OnSampleAvailable(float[] sample)
+        {
+            if (lastVideoSec != DateTime.Now.Second)
             {
                 lastKnownVideoUpdatePerSecond = videoUpdatePerSecond;
                 videoUpdatePerSecond = 0;
                 lastVideoSec = DateTime.Now.Second;
             }
 
-            using (var capture = new Mat())
-            {
-                videoCapture.Retrieve(capture);
-                var image = capture.ToImage<Bgr, byte>();
-                color = DominantColor(image);
-            }
-
-            videoUpdatePerSecond++;
-        }  
-
-        private static void Recorder_OnSampleAvailable(float[] sample)
-        {
             if (lastSoundSec != DateTime.Now.Second)
             {    
                 lastKnownRequestPerSecond = requestPerSecond;
@@ -138,17 +163,36 @@ namespace Musicolor
             if(verbose)
             {
                 Console.SetCursorPosition(0, 0);
-                Console.Write("################################");
+                Console.Write("#########################################");
                 Console.SetCursorPosition(0, 1);
-                Console.Write("Requests per second: " + lastKnownRequestPerSecond);
+                Console.Write("Requests per second:            ");
+                Console.SetCursorPosition(30, 1);
+                Console.Write(lastKnownRequestPerSecond);
                 Console.SetCursorPosition(0, 2);
-                Console.Write("Video updates per second: " + lastKnownVideoUpdatePerSecond);
+                Console.Write("Video updates per second:       ");
+                Console.SetCursorPosition(30, 2);
+                Console.Write(lastKnownVideoUpdatePerSecond);
                 Console.SetCursorPosition(0, 3);
-                Console.Write("Bright : " + bright);
+                Console.Write("Bright :                        ");
+                Console.SetCursorPosition(30, 3);
+                Console.Write(bright);
                 Console.SetCursorPosition(0, 4);
-                Console.Write("Color : " + color.ToHex());
+                Console.Write("Color :                         ");
+                Console.SetCursorPosition(30, 4);
+                Console.Write("#" + color.ToHex());
                 Console.SetCursorPosition(0, 5);
-                Console.WriteLine("################################");
+                if(autoRestart)
+                {
+                    Console.Write("Underruns restart count :       ");
+                    Console.SetCursorPosition(30, 5);
+                    Console.Write(restartCount);
+                    Console.SetCursorPosition(0, 6);
+                }
+                else
+                {
+                    Console.SetCursorPosition(0, 5);
+                }
+                Console.WriteLine("#########################################");
             }
 
         }

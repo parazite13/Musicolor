@@ -9,22 +9,33 @@ namespace Musicolor
     {
         public event Action<float[]> OnSampleAvailable;
         private Audio audio;
-        private int NUM_CHANNELS = 1;
-        public static int SAMPLE_RATE = 44100;
-        private uint FRAMES_PER_BUFFER = 2048;
+        private static readonly int NUM_CHANNELS = 1;
+        public static readonly int DEFAULT_SAMPLE_RATE = 44100;
+        public static readonly uint DEFAULT_FRAMES_PER_BUFFER = 2048;
 
-        public Recorder()
+        public int SampleRate { get; private set; }
+        public uint Buffer { get; private set; }
+        public bool IsRecording { get; private set; }
+
+        private DateTime lastUpdate;
+
+        public Recorder(int samplerate, uint buffer)
         {
             try
             {
                 Audio.LoggingEnabled = true;
-                audio = new Audio(NUM_CHANNELS, 2, SAMPLE_RATE, FRAMES_PER_BUFFER, RecordCallback);
+                SampleRate = samplerate;
+                Buffer = buffer;
+                IsRecording = false;
+                audio = new Audio(NUM_CHANNELS, 2, samplerate, buffer, RecordCallback);
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
             }
         }
+
+        public Recorder() : this(DEFAULT_SAMPLE_RATE, DEFAULT_FRAMES_PER_BUFFER) { }
 
         private PortAudio.PaStreamCallbackResult RecordCallback(
              IntPtr input,
@@ -36,6 +47,7 @@ namespace Musicolor
         {
             try
             {
+                lastUpdate = DateTime.Now;
                 var callbackBuffer = new float[frameCount];
                 Marshal.Copy(input, callbackBuffer, 0, (int)frameCount);
                 OnSampleAvailable?.Invoke(callbackBuffer);
@@ -49,7 +61,23 @@ namespace Musicolor
 
         public void Start()
         {
+            IsRecording = true;
+            lastUpdate = DateTime.Now;
             audio.Start();
+            new Thread(CheckIfAlive).Start();
+        }
+
+        private void CheckIfAlive()
+        {
+            while(IsRecording)
+            {
+                Thread.Sleep(500);
+                if (DateTime.Now - lastUpdate > TimeSpan.FromSeconds(2))
+                {
+                    audio.Dispose();
+                    IsRecording = false;
+                }
+            }
         }
 
         public void Stop()
@@ -66,6 +94,7 @@ namespace Musicolor
             }
             finally
             {
+                IsRecording = false;
                 audio?.Dispose();
             }
         }
