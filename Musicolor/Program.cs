@@ -37,7 +37,6 @@ namespace Musicolor
         static void Main(string[] args)
         {
             var showUsage = false;
-            var videoUpdateRate = 1f;
             var samplerate = Recorder.DEFAULT_SAMPLE_RATE;
             var buffer = Recorder.DEFAULT_FRAMES_PER_BUFFER;
             autoRestart = false;
@@ -46,7 +45,6 @@ namespace Musicolor
                 .Add("ar|auto_restart", "If present the recorder will automatically restart if an underrun occurs", v => autoRestart = v != null)
                 .Add("s|samplerate=", "Samplerate that will be used for the recording (default : " + Recorder.DEFAULT_SAMPLE_RATE + ")", v => samplerate = int.Parse(v))
                 .Add("b|buffer=", "Buffer size that will be used for the recording (default : " + Recorder.DEFAULT_FRAMES_PER_BUFFER + ")", v => buffer = uint.Parse(v))
-                .Add("r|rate=", "Maximun rate at which the video input will be grabbed to deduce which color is appropriate per second (default : 1)", v => videoUpdateRate = float.Parse(v))
                 .Add("ab|average_bright=", "Specify how many previous sample will be used to compute the average bright (default : 5)", v => nbBrighsForAverage = int.Parse(v))
                 .Add("v|verbose", v => verbose = v != null)
                 .Add("h|help", v => showUsage = v != null);
@@ -75,7 +73,8 @@ namespace Musicolor
             recorder.Start();
             
             videoCapture = new VideoCapture();
-            var videoCaptureTimer = new Timer(FrameUpdateCallback, new object(), 0, (int)(1000f / videoUpdateRate));
+            videoCapture.ImageGrabbed += VideoCapture_ImageGrabbed;
+            videoCapture.Start();
 
             Console.Clear();
 
@@ -117,18 +116,22 @@ namespace Musicolor
             }
             finally
             {
-                videoCaptureTimer.Dispose();
+                videoCapture.Stop();
                 Hue.Dispose();
                 recorder.Stop();
             }
             
         }
 
-        private static void FrameUpdateCallback(object state)
+        private static void VideoCapture_ImageGrabbed(object sender, EventArgs e)
         {
-            color = DominantColor(videoCapture.QueryFrame().ToImage<Bgr, byte>());
-            videoUpdatePerSecond++;
-        }  
+            using (var frame = new Mat())
+            {
+                videoCapture.Retrieve(frame);
+                color = DominantColor(frame.ToImage<Bgr, byte>());
+                videoUpdatePerSecond++;
+            }
+        }
 
         private static void Recorder_OnSampleAvailable(float[] sample)
         {

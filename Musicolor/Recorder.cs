@@ -47,6 +47,11 @@ namespace Musicolor
         {
             try
             {
+                if(!IsRecording)
+                {
+                    IsRecording = true;
+                    new Thread(CheckIfAlive).Start();
+                }
                 lastUpdate = DateTime.Now;
                 var callbackBuffer = new float[frameCount];
                 Marshal.Copy(input, callbackBuffer, 0, (int)frameCount);
@@ -61,10 +66,8 @@ namespace Musicolor
 
         public void Start()
         {
-            IsRecording = true;
             lastUpdate = DateTime.Now;
             audio.Start();
-            new Thread(CheckIfAlive).Start();
         }
 
         private void CheckIfAlive()
@@ -72,7 +75,7 @@ namespace Musicolor
             while(IsRecording)
             {
                 Thread.Sleep(500);
-                if (DateTime.Now - lastUpdate > TimeSpan.FromSeconds(2))
+                if (DateTime.Now - lastUpdate > TimeSpan.FromSeconds(0.5))
                 {
                     audio.Dispose();
                     IsRecording = false;
