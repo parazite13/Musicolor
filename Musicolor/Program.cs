@@ -83,13 +83,16 @@ namespace Musicolor
                 var exitRequested = false;
                 Task.Factory.StartNew(() =>
                 {
-                    while (Console.ReadKey().Key != ConsoleKey.Escape) ;
+                    while (Console.ReadKey().Key != ConsoleKey.Escape)
+                    {
+                    }
+
                     exitRequested = true;
                 });
 
                 while(!exitRequested)
                 {
-                    Thread.Sleep(100);
+                    Thread.Sleep(200);
 
                     if(!recorder.IsRecording)
                     {
@@ -100,7 +103,6 @@ namespace Musicolor
                             recorder = new Recorder();
                             recorder.OnSampleAvailable += Recorder_OnSampleAvailable;
                             recorder.Start();
-                            Console.Clear();
                             restartCount++;
                         }
                         else
@@ -108,6 +110,8 @@ namespace Musicolor
                             break;
                         }
                     }
+                    
+                    Console.Clear();
                 }
             }
             catch (Exception e)
@@ -149,9 +153,12 @@ namespace Musicolor
                 lastSoundSec = DateTime.Now.Second;
             }
 
-            var rms = RMS(sample);
-            var level = (float)Math.Pow(rms * 30, 1 / 2f);
-            var bright = Math.Max(1f / 255, level);
+            var scale = 50;
+            var exponent = 4;
+            
+            var rms = Rms(sample);
+            var level = (float)Math.Pow(Math.Min(rms * scale, 1.0), exponent);
+            var bright = Math.Max(0.1f, level);
 
             previousBrights.Add(bright);
             if (previousBrights.Count < nbBrighsForAverage) return;
@@ -159,7 +166,11 @@ namespace Musicolor
             previousBrights.RemoveAt(0);
             bright = previousBrights.Average();
 
-            Hue.BaseLayer.SetState(new CancellationToken(), color, bright);
+            Hue.BaseLayer.GetLeft().SetState(new CancellationToken(), color, bright);
+            Hue.BaseLayer.GetRight().SetState(new CancellationToken(), color, bright);
+            Hue.BaseLayer.GetCenter().SetState(new CancellationToken(), color, 1f);
+
+            //Hue.BaseLayer.SetState(new CancellationToken(), color, bright);
 
             requestPerSecond++;
 
@@ -200,9 +211,9 @@ namespace Musicolor
 
         }
 
-        private static float RMS(float[] x)
+        private static float Rms(IReadOnlyCollection<float> x)
         {
-            return (float)Math.Sqrt(x.Sum(n => n * n) / x.Length);
+            return (float)Math.Sqrt(x.Sum(n => n * n) / x.Count);
         }
 
         private static RGBColor DominantColor(Image<Bgr, byte> image)

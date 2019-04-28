@@ -6,6 +6,8 @@ using System.Linq;
 using Q42.HueApi.Models.Bridge;
 using System.IO;
 using System.Threading;
+using Q42.HueApi.Streaming.Effects;
+using Q42.HueApi.Streaming.Effects.Examples;
 
 namespace Musicolor
 {
@@ -72,7 +74,7 @@ namespace Musicolor
             Ready = true;
 
             cancellationTokenSource = new CancellationTokenSource();
-
+            
             //Start auto updating this entertainment group
             await Client.AutoUpdate(StreamingGroup, cancellationTokenSource.Token, 50);
             
